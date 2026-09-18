@@ -1,9 +1,20 @@
--- Sample data for local development and demos. Idempotent: doctors are keyed on
--- their unique email, appointments on the active-slot index, so re-running
--- this file changes nothing.
+-- Sample data for demos. Run once per database, even when deployments repeat.
+-- This also preserves later edits to seeded doctors' working periods.
 --
 -- Appointment dates are relative to CURRENT_DATE so the dashboard always has
--- today's and upcoming appointments to show, whenever the seed is run.
+-- today's and upcoming appointments to show when the seed first runs.
+
+CREATE TABLE IF NOT EXISTS seed_runs (
+  name TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(20260918);
+  IF EXISTS (SELECT 1 FROM seed_runs WHERE name = 'sample_data_v1') THEN
+    RETURN;
+  END IF;
 
 INSERT INTO doctors (name, specialization, phone, email, is_active) VALUES
   ('Dr. Amara Okonkwo',  'General Dentistry',  '+1-555-0101', 'amara.okonkwo@brightsmile.test',  TRUE),
@@ -52,3 +63,7 @@ FROM (VALUES
 ) AS v(patient_name, patient_phone, patient_email, doctor_email, day_offset, at, reason, status)
 JOIN doctors d ON d.email = v.doctor_email
 ON CONFLICT DO NOTHING;
+
+INSERT INTO seed_runs (name) VALUES ('sample_data_v1');
+END;
+$$;

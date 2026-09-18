@@ -87,10 +87,10 @@ Run these from `backend/` after setting `DATABASE_URL`:
 | Command | Action |
 | --- | --- |
 | `npm run db:migrate` | Apply the base schema, then unapplied SQL files in `src/db/migrations/` |
-| `npm run db:seed` | Add sample doctors and appointments |
+| `npm run db:seed` | Add sample doctors and appointments once per database |
 | `npm run db:reset` | Reapply schema, then seed; **does not delete existing data** |
 
-The base schema and seed can be rerun. Versioned migrations are recorded in `schema_migrations` and applied once each. Seeded appointment dates are relative to the date of the first seed; rerunning the seed will not move existing appointments forward.
+The base schema and seed can be rerun. Versioned migrations are recorded in `schema_migrations` and applied once each. The seed is recorded in `seed_runs` after its first successful run, so later deployments do not add duplicate sample records or restore edited schedules. Seeded appointment dates are relative to the date of the first seed.
 
 ## API
 
@@ -164,7 +164,7 @@ When changing an API resource, update its route, controller, service, validation
 
 ### Backend CI/CD to EC2
 
-The [backend workflow](.github/workflows/backend.yml) runs typechecking, unit tests, migrations, and API integration tests against a temporary PostgreSQL service for backend changes in pull requests and pushes to `develop`. After a successful push to `develop`, it deploys only `backend/` to EC2, runs production migrations, restarts the systemd service, and checks the local health endpoint. It can also be run manually from the `develop` branch. The frontend is not deployed by this workflow.
+The [backend workflow](.github/workflows/backend.yml) runs typechecking, unit tests, migrations, and API integration tests against a temporary PostgreSQL service for backend changes in pull requests and pushes to `develop`. After a successful push to `develop`, it deploys only `backend/` to EC2, runs production migrations and the one-time seed against the database in `BACKEND_ENV_B64`, starts or restarts the API with PM2, and configures Nginx with HTTPS. It can also be run manually from the `develop` branch. The frontend is not deployed by this workflow.
 
 In GitHub **Settings → Secrets and variables → Actions**, configure:
 
@@ -187,11 +187,16 @@ Prepare the EC2 instance once as `ubuntu`:
 
 1. Ensure `rsync` is installed so the backend can be uploaded. The workflow installs Node.js 22 and npm from the [NodeSource Ubuntu packages](https://github.com/nodesource/distributions/blob/master/DEV_README.md) when `/usr/bin/node` is missing or older than 22.18, or when `npm` is unavailable. This requires outbound package access and passwordless `sudo` on EC2.
 2. Ensure PostgreSQL is reachable from EC2 and its user can run migrations. The workflow writes `~/dentalclinic-backend/.env` from `BACKEND_ENV_B64` on every deployment; no manual `.env` upload is needed.
-3. Ensure the `ubuntu` user can run `sudo systemctl restart dentalclinic-backend` without an interactive password. The workflow creates and enables the service on first deployment if it is missing, then installs dependencies, runs migrations, and starts the service. Ubuntu's usual EC2 sudo configuration permits this; verify with `ssh ubuntu@HOST 'sudo -n true'`.
+3. Ensure the `ubuntu` user has passwordless `sudo` for installing PM2 and registering its reboot startup service. The workflow disables the earlier `dentalclinic-backend` systemd service if present, installs PM2, and runs the API from [ecosystem.config.cjs](backend/ecosystem.config.cjs). PM2 saves the process list and uses a `pm2-ubuntu` systemd startup unit to restore it after reboot. Verify sudo with `ssh ubuntu@HOST 'sudo -n true'`.
+4. Open inbound **TCP 80 and 443** in the EC2 security group. Port 80 is needed for Let's Encrypt to validate the Elastic IP; port 443 serves the API over HTTPS. Do this before the deployment runs certificate issuance.
 
-No AWS access keys are needed for this SSH deployment. Keep port 3000 private behind a TLS reverse proxy; the API currently has no user authentication.
+The [Nginx setup script](backend/deploy/setup-nginx.sh) proxies to the API on `127.0.0.1:3000`, redirects HTTP to HTTPS, and makes `https://52.71.155.97/` lead to the health endpoint. API routes remain under `https://52.71.155.97/api/v1`. It obtains a trusted Let's Encrypt **IP certificate** through Certbot and installs a twice-daily renewal timer; IP certificates last about six days. The certificate covers the Elastic IP, not the EC2 DNS hostname, so use the IP URL for HTTPS. The script leaves an HTTP proxy running if certificate issuance fails, and the deployment reports the failure. [Let's Encrypt IP certificate instructions](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).
 
-Deployment does **not** run the sample seed. GitHub's `production` environment can be configured with required reviewers if manual deployment approval is desired.
+No AWS access keys are needed for this SSH deployment. Keep port 3000 closed in the EC2 security group; the API currently has no user authentication.
+
+On EC2, run `pm2 status` and `pm2 logs dentalclinic-backend` as **ubuntu** to inspect the process. The workflow health check fails if PM2 does not bring the API online.
+
+Deployment runs the sample seed once per database. If `DATABASE_URL` uses a Neon `-pooler` host, the workflow switches to the corresponding direct host only for migrations and seeding; the API keeps the pooled URL. GitHub's `production` environment can be configured with required reviewers if manual deployment approval is desired.
 
 ### Other hosts
 

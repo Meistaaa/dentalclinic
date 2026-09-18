@@ -136,7 +136,7 @@ jobs:
             fi
             mv .env.next .env
           '
-      - name: Install, migrate, and restart
+      - name: Install, migrate, and start with PM2
         run: |
           ssh "$EC2_USER@$EC2_HOST" 'bash -se' <<'REMOTE'
           set -euo pipefail
@@ -154,31 +154,29 @@ jobs:
           fi
           /usr/bin/node --version
           npm --version
-          if ! systemctl cat dentalclinic-backend >/dev/null 2>&1; then
-            sudo tee /etc/systemd/system/dentalclinic-backend.service >/dev/null <<'UNIT'
-          [Unit]
-          Description=Dental Clinic backend
-          After=network-online.target
-          Wants=network-online.target
-
-          [Service]
-          Type=simple
-          User=ubuntu
-          WorkingDirectory=/home/ubuntu/dentalclinic-backend
-          ExecStart=/usr/bin/node src/server.ts
-          Restart=always
-          RestartSec=5
-          Environment=NODE_ENV=production
-
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
-            sudo systemctl daemon-reload
-            sudo systemctl enable dentalclinic-backend
+          if ! command -v pm2 >/dev/null 2>&1; then
+            sudo npm install -g pm2@latest
           fi
+          pm2 --version
           npm ci --omit=dev
-          npm run db:migrate
-          sudo systemctl restart dentalclinic-backend
+          direct_db_url=$(/usr/bin/node --input-type=module -e '
+            import "dotenv/config";
+            const url = new URL(process.env.DATABASE_URL);
+            url.hostname = url.hostname.replace("-pooler.", ".");
+            process.stdout.write(url.href);
+          ')
+          DATABASE_URL="$direct_db_url" npm run db:migrate
+          DATABASE_URL="$direct_db_url" npm run db:seed
+          unset direct_db_url
+          if systemctl cat dentalclinic-backend >/dev/null 2>&1; then
+            sudo systemctl disable --now dentalclinic-backend
+          fi
+          pm2 startOrRestart ecosystem.config.cjs --env production --update-env
+          if ! systemctl cat pm2-ubuntu >/dev/null 2>&1; then
+            sudo env PATH="$PATH" pm2 startup systemd -u ubuntu --hp /home/ubuntu
+          fi
+          pm2 save
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             http://127.0.0.1:3000/api/v1/health
+          sudo bash deploy/setup-nginx.sh
           REMOTE
