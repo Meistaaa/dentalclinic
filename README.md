@@ -162,6 +162,38 @@ When changing an API resource, update its route, controller, service, validation
 
 ## Deployment
 
+### Backend CI/CD to EC2
+
+The [backend workflow](.github/workflows/backend.yml) runs typechecking, unit tests, migrations, and API integration tests against a temporary PostgreSQL service for backend changes in pull requests and pushes to `develop`. After a successful push to `develop`, it deploys only `backend/` to EC2, runs production migrations, restarts the systemd service, and checks the local health endpoint. It can also be run manually from the `develop` branch. The frontend is not deployed by this workflow.
+
+In GitHub **Settings → Secrets and variables → Actions**, configure:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| Repository secret | `EC2_SSH_KEY` | The complete contents of `auto-key-20250421191234.pem`, including its BEGIN/END lines. This is already present if the screenshot reflects the current repository. |
+| Repository secret | `BACKEND_ENV_B64` | Base64 encoding of the entire production `backend/.env` file. |
+| Repository variable | `EC2_HOST` | `52.71.155.97` (the Elastic IP) |
+
+Create the production `.env` locally with `NODE_ENV=production`, `PORT=3000`, a real `DATABASE_URL`, and the exact frontend origin in `CORS_ORIGIN`. Never commit this file. Encode the whole file without line breaks and paste the output into the `BACKEND_ENV_B64` **secret**:
+
+```bash
+base64 < backend/.env | tr -d '\n'
+```
+
+The workflow decodes this secret into `/home/ubuntu/dentalclinic-backend/.env` over SSH with mode `600`. Base64 is encoding, **not encryption**; protect it as a secret. The existing individual `DATABASE_URL`, `CORS_ORIGIN`, and `PORT` GitHub secrets are unused by this workflow once `BACKEND_ENV_B64` is set. The SSH private key authenticates the `ubuntu` user. The workflow accepts the server host key on first connection and checks it on later connections within that run; a fresh GitHub runner cannot independently verify that first key without a pinned fingerprint.
+
+Prepare the EC2 instance once as `ubuntu`:
+
+1. Install Node.js **22.18+**, npm, `rsync`, and `curl`. Ensure `node` is available at `/usr/bin/node` and `npm` is on the SSH user's noninteractive PATH (`ssh ubuntu@HOST 'node -v && npm -v'`).
+2. Ensure PostgreSQL is reachable from EC2 and its user can run migrations. The workflow writes `~/dentalclinic-backend/.env` from `BACKEND_ENV_B64` on every deployment; no manual `.env` upload is needed.
+3. Ensure the `ubuntu` user can run `sudo systemctl restart dentalclinic-backend` without an interactive password. The workflow creates and enables the service on first deployment if it is missing, then installs dependencies, runs migrations, and starts the service. Ubuntu's usual EC2 sudo configuration permits this; verify with `ssh ubuntu@HOST 'sudo -n true'`.
+
+No AWS access keys are needed for this SSH deployment. Keep port 3000 private behind a TLS reverse proxy; the API currently has no user authentication.
+
+Deployment does **not** run the sample seed. GitHub's `production` environment can be configured with required reviewers if manual deployment approval is desired.
+
+### Other hosts
+
 Deploy PostgreSQL first, then the API, then the frontend. For a host such as Render:
 
 1. Create a PostgreSQL database and use its connection URL as the backend `DATABASE_URL`.

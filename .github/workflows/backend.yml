@@ -1,0 +1,153 @@
+name: Backend CI and deploy
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: clinic_test
+          POSTGRES_PASSWORD: clinic_test
+          POSTGRES_DB: clinic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clinic_test -d clinic_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://clinic_test:clinic_test@localhost:5432/clinic_test
+      CORS_ORIGIN: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.18.0'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run db:migrate
+      - name: Run API integration tests
+        run: |
+          set -euo pipefail
+          npm start > "$RUNNER_TEMP/backend.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; cat "$RUNNER_TEMP/backend.log"' EXIT
+          for attempt in {1..30}; do
+            if curl --silent --fail http://127.0.0.1:3000/api/v1/health > /dev/null; then
+              npm run test:integration
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Backend did not become healthy' >&2
+          exit 1
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/develop' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_USER: ubuntu
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      BACKEND_ENV_B64: ${{ secrets.BACKEND_ENV_B64 }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          test -n "$EC2_HOST" && test -n "$EC2_SSH_KEY" && test -n "$BACKEND_ENV_B64"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          printf 'Host %s\n  IdentityFile %s/.ssh/ec2_key\n  BatchMode yes\n  StrictHostKeyChecking accept-new\n' \
+            "$EC2_HOST" "$HOME" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+      - name: Upload backend
+        run: |
+          set -euo pipefail
+          ssh "$EC2_USER@$EC2_HOST" 'mkdir -p ~/dentalclinic-backend'
+          rsync -az --delete \
+            --exclude='.env' --exclude='node_modules' --exclude='coverage' \
+            -e ssh \
+            backend/ "$EC2_USER@$EC2_HOST:~/dentalclinic-backend/"
+      - name: Install backend environment
+        run: |
+          set -euo pipefail
+          printf '%s' "$BACKEND_ENV_B64" | ssh "$EC2_USER@$EC2_HOST" '
+            set -eu
+            cd ~/dentalclinic-backend
+            umask 077
+            trap "rm -f .env.next" EXIT
+            base64 --decode > .env.next
+            test -s .env.next
+            grep -q "^NODE_ENV=production$" .env.next
+            grep -q "^PORT=3000$" .env.next
+            grep -q "^DATABASE_URL=" .env.next
+            grep -q "^CORS_ORIGIN=" .env.next
+            mv .env.next .env
+          '
+      - name: Install, migrate, and restart
+        run: |
+          ssh "$EC2_USER@$EC2_HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          cd ~/dentalclinic-backend
+          test -s .env
+          if ! systemctl cat dentalclinic-backend >/dev/null 2>&1; then
+            sudo tee /etc/systemd/system/dentalclinic-backend.service >/dev/null <<'UNIT'
+          [Unit]
+          Description=Dental Clinic backend
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=ubuntu
+          WorkingDirectory=/home/ubuntu/dentalclinic-backend
+          ExecStart=/usr/bin/node src/server.ts
+          Restart=always
+          RestartSec=5
+          Environment=NODE_ENV=production
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+            sudo systemctl daemon-reload
+            sudo systemctl enable dentalclinic-backend
+          fi
+          npm ci --omit=dev
+          npm run db:migrate
+          sudo systemctl restart dentalclinic-backend
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            http://127.0.0.1:3000/api/v1/health
+          REMOTE
