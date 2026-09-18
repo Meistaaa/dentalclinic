@@ -185,7 +185,7 @@ The workflow decodes this secret into `/home/ubuntu/dentalclinic-backend/.env` o
 
 Prepare the EC2 instance once as `ubuntu`:
 
-1. Install Node.js **22.18+**, npm, `rsync`, and `curl`. Ensure `node` is available at `/usr/bin/node` and `npm` is on the SSH user's noninteractive PATH (`ssh ubuntu@HOST 'node -v && npm -v'`).
+1. Ensure `rsync` is installed so the backend can be uploaded. The workflow installs Node.js 22 and npm from the [NodeSource Ubuntu packages](https://github.com/nodesource/distributions/blob/master/DEV_README.md) when `/usr/bin/node` is missing or older than 22.18, or when `npm` is unavailable. This requires outbound package access and passwordless `sudo` on EC2.
 2. Ensure PostgreSQL is reachable from EC2 and its user can run migrations. The workflow writes `~/dentalclinic-backend/.env` from `BACKEND_ENV_B64` on every deployment; no manual `.env` upload is needed.
 3. Ensure the `ubuntu` user can run `sudo systemctl restart dentalclinic-backend` without an interactive password. The workflow creates and enables the service on first deployment if it is missing, then installs dependencies, runs migrations, and starts the service. Ubuntu's usual EC2 sudo configuration permits this; verify with `ssh ubuntu@HOST 'sudo -n true'`.
 

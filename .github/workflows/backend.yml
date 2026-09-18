@@ -142,6 +142,18 @@ jobs:
           set -euo pipefail
           cd ~/dentalclinic-backend
           test -s .env
+          if ! command -v npm >/dev/null 2>&1 || ! test -x /usr/bin/node || \
+             ! /usr/bin/node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            sudo apt-get update -y
+            sudo apt-get install -y curl ca-certificates
+            setup_script=$(mktemp)
+            trap 'rm -f "$setup_script"' EXIT
+            curl -fsSL https://deb.nodesource.com/setup_22.x -o "$setup_script"
+            sudo -E bash "$setup_script"
+            sudo apt-get install -y nodejs
+          fi
+          /usr/bin/node --version
+          npm --version
           if ! systemctl cat dentalclinic-backend >/dev/null 2>&1; then
             sudo tee /etc/systemd/system/dentalclinic-backend.service >/dev/null <<'UNIT'
           [Unit]
