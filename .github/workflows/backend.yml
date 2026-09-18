@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_HOST: 52.71.155.97
       EC2_USER: ubuntu
       EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
       BACKEND_ENV_B64: ${{ secrets.BACKEND_ENV_B64 }}
@@ -93,6 +93,7 @@ jobs:
           printf 'Host %s\n  IdentityFile %s/.ssh/ec2_key\n  BatchMode yes\n  StrictHostKeyChecking accept-new\n' \
             "$EC2_HOST" "$HOME" > ~/.ssh/config
           chmod 600 ~/.ssh/config
+          ssh -G "$EC2_HOST" > /dev/null
       - name: Upload backend
         run: |
           set -euo pipefail

@@ -172,7 +172,8 @@ In GitHub **Settings → Secrets and variables → Actions**, configure:
 | --- | --- | --- |
 | Repository secret | `EC2_SSH_KEY` | The complete contents of `auto-key-20250421191234.pem`, including its BEGIN/END lines. This is already present if the screenshot reflects the current repository. |
 | Repository secret | `BACKEND_ENV_B64` | Base64 encoding of the entire production `backend/.env` file. |
-| Repository variable | `EC2_HOST` | `52.71.155.97` (the Elastic IP) |
+
+The workflow uses the supplied Elastic IP `52.71.155.97` directly. No GitHub repository variable is required for the host; update `EC2_HOST` in the workflow if the instance IP changes.
 
 Create the production `.env` locally with `NODE_ENV=production`, `PORT=3000`, a real `DATABASE_URL`, and the exact frontend origin in `CORS_ORIGIN`. Never commit this file. Encode the whole file without line breaks and paste the output into the `BACKEND_ENV_B64` **secret**:
 
