@@ -110,12 +110,30 @@ jobs:
             cd ~/dentalclinic-backend
             umask 077
             trap "rm -f .env.next" EXIT
-            base64 --decode > .env.next
-            test -s .env.next
-            grep -q "^NODE_ENV=production$" .env.next
-            grep -q "^PORT=3000$" .env.next
-            grep -q "^DATABASE_URL=" .env.next
-            grep -q "^CORS_ORIGIN=" .env.next
+            if ! base64 --decode > .env.next; then
+              echo "BACKEND_ENV_B64 is not valid base64" >&2
+              exit 1
+            fi
+            if ! test -s .env.next; then
+              echo "BACKEND_ENV_B64 decoded to an empty file" >&2
+              exit 1
+            fi
+            if ! grep -q "^NODE_ENV=production$" .env.next; then
+              echo "Decoded .env must contain NODE_ENV=production" >&2
+              exit 1
+            fi
+            if ! grep -q "^PORT=3000$" .env.next; then
+              echo "Decoded .env must contain PORT=3000" >&2
+              exit 1
+            fi
+            if ! grep -q "^DATABASE_URL=." .env.next; then
+              echo "Decoded .env must contain a nonempty DATABASE_URL" >&2
+              exit 1
+            fi
+            if ! grep -q "^CORS_ORIGIN=." .env.next; then
+              echo "Decoded .env must contain a nonempty CORS_ORIGIN" >&2
+              exit 1
+            fi
             mv .env.next .env
           '
       - name: Install, migrate, and restart
