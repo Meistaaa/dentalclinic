@@ -1,0 +1,55 @@
+/* Design tokens. The palette is anchored on the clinic's royal blue; every
+   neutral is tinted toward that hue so greys never read as dead grey. */
+:root {
+  --blue-900: #16244d;
+  --blue-800: #1d3167;
+  --blue-700: #253d80;
+  --blue-600: #2f4b9c; /* primary */
+  --blue-500: #3d5cb4;
+  --blue-300: #8ea2d8;
+  --blue-100: #dbe3f6;
+  --blue-50:  #eef2fb;
+
+  --canvas:  #e9edf6;
+  --surface: #ffffff;
+  --surface-sunk: #f4f6fc;
+
+  --ink:       #111c38;
+  --ink-soft:  #3d4a6b;
+  --ink-muted: #6b7796;
+  --line:      #dde3f1;
+  --line-soft: #eaeefa;
+
+  --amber:   #e2941c;
+  --amber-bg:#fdf1dc;
+  --green:   #17875c;
+  --green-bg:#dcf3e9;
+  --red:     #c7404a;
+  --red-bg:  #fbe4e6;
+  --slate-bg:#e7eaf3;
+
+  --r-xl: 24px;
+  --r-lg: 18px;
+  --r-md: 12px;
+  --r-sm: 8px;
+
+  /* Shadows are blue-tinted and shallow: a medical tool should feel calm. */
+  --shadow-sm: 0 1px 2px rgba(22, 36, 77, .06);
+  --shadow-md: 0 4px 16px rgba(22, 36, 77, .07);
+  --shadow-lg: 0 16px 40px rgba(22, 36, 77, .12);
+
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --sidebar-w: 248px;
+
+  --font-display: 'Outfit', 'Segoe UI', sans-serif;
+  --font-body: 'Public Sans', 'Segoe UI', sans-serif;
+
+  /* Fluid type scale, ~1.25 ratio. */
+  --t-xs: .75rem;
+  --t-sm: .8125rem;
+  --t-base: .9375rem;
+  --t-md: 1.0625rem;
+  --t-lg: clamp(1.25rem, 1.1rem + .5vw, 1.5rem);
+  --t-xl: clamp(1.6rem, 1.3rem + 1.2vw, 2.25rem);
+  --t-display: clamp(2rem, 1.4rem + 2.4vw, 3rem);
+}

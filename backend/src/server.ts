@@ -1,7 +1,5 @@
-import 'dotenv/config'
 import express from 'express'
 import { env } from './lib/env.ts'
-import { migrate } from './db.ts'
 import { apiRouter } from './routes/index.ts'
 import { globalLimiter } from './middleware/rateLimit.ts'
 import { corsPolicy, securityHeaders } from './middleware/security.ts'
@@ -23,11 +21,13 @@ app.use(corsPolicy)
 app.use(express.json({ limit: '100kb' }))
 app.use(globalLimiter)
 
-// The only place the version appears. Adding v2 means one more mount line.
+// /api/v1 is the canonical prefix; /api is an unversioned alias so existing
+// callers and the documented endpoints keep working. Both serve the same router,
+// so a v2 is a second mount here and nothing else in the codebase changes.
 app.use(`/api/${API_VERSION}`, apiRouter)
+app.use('/api', apiRouter)
 
 app.use(notFound)
 app.use(errorHandler)
 
-await migrate()
-app.listen(env.PORT, () => console.log(`API listening on ${env.PORT} at /api/${API_VERSION}`))
+app.listen(env.PORT, () => console.log(`API listening on ${env.PORT} (/api and /api/${API_VERSION})`))

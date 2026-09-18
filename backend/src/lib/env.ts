@@ -1,3 +1,6 @@
+// Loaded here rather than in server.ts so every entrypoint that reads env —
+// the API, the SQL runner, any future script — gets .env without repeating this.
+import 'dotenv/config'
 import { z } from 'zod'
 
 const envSchema = z.object({

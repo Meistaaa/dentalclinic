@@ -1,7 +1,13 @@
 import cors from 'cors'
-import helmet from 'helmet'
+// helmet is only exported as a default. A default import resolves to the module
+// namespace (not the function) under CommonJS interop, which breaks any build
+// that compiles this file with its own tsconfig instead of ours. Reaching for
+// .default explicitly is correct under both module systems.
+import * as helmetModule from 'helmet'
 import type { RequestHandler } from 'express'
 import { allowedOrigins, isProd } from '../lib/env.ts'
+
+const helmet = helmetModule.default
 
 /**
  * Header hardening. This API only ever returns JSON, so the CSP is locked to
@@ -35,7 +41,7 @@ export const corsPolicy: RequestHandler = cors({
     callback(new Error('Origin not allowed by CORS'))
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
   maxAge: 86_400,
 })
